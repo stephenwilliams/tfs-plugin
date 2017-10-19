@@ -5,10 +5,7 @@ import com.cloudbees.plugins.credentials.common.StandardUsernamePasswordCredenti
 import com.microsoft.tfs.core.clients.versioncontrol.specs.version.ChangesetVersionSpec;
 import com.microsoft.tfs.core.clients.versioncontrol.specs.version.DateVersionSpec;
 import com.microsoft.tfs.core.clients.versioncontrol.specs.version.VersionSpec;
-import hudson.Extension;
-import hudson.FilePath;
-import hudson.Launcher;
-import hudson.Util;
+import hudson.*;
 import hudson.model.AbstractBuild;
 import hudson.model.AbstractProject;
 import hudson.model.BuildListener;
@@ -31,6 +28,7 @@ import hudson.plugins.tfs.model.WorkspaceConfiguration;
 import hudson.plugins.tfs.util.BuildVariableResolver;
 import hudson.plugins.tfs.util.BuildWorkspaceConfigurationRetriever;
 import hudson.plugins.tfs.util.BuildWorkspaceConfigurationRetriever.BuildWorkspaceConfiguration;
+import hudson.plugins.tfs.util.TfsUtils;
 import hudson.scm.ChangeLogParser;
 import hudson.scm.PollingResult;
 import hudson.scm.PollingResult.Change;
@@ -65,6 +63,7 @@ import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 import static hudson.Util.fixEmpty;
+import static hudson.scm.PollingResult.BUILD_NOW;
 
 /**
  * SCM for Microsoft Team Foundation Server.
@@ -645,19 +644,32 @@ public class TeamFoundationServerScm extends SCM {
             FilePath workspace, TaskListener listener, SCMRevisionState baseline)
             throws IOException, InterruptedException {
 
+
         final Launcher localLauncher = launcher != null ? launcher : new Launcher.LocalLauncher(listener);
         if (!(baseline instanceof TFSRevisionState))
         {
             // This plugin was just upgraded, we don't yet have a new-style baseline,
             // so we perform an old-school poll
             boolean shouldBuild = pollChanges(project, localLauncher, workspace, listener);
-            return shouldBuild ? PollingResult.BUILD_NOW : PollingResult.NO_CHANGES;
+            return shouldBuild ? BUILD_NOW : PollingResult.NO_CHANGES;
         }
         final TFSRevisionState tfsBaseline = (TFSRevisionState) baseline;
+
+        final Run lastBuild = project.getLastBuild();
+        if (lastBuild == null) {
+            // If we've never been built before, well, gotta build!
+            listener.getLogger().println("[poll] No previous build, so forcing an initial build.");
+            return BUILD_NOW;
+        }
+
+        final EnvVars pollEnv = project instanceof AbstractProject ? TfsUtils.getPollEnvironment(project, workspace, launcher, listener, false) : lastBuild.getEnvironment(listener);
+
+        String projectPath = pollEnv.expand(this.projectPath);
+
         if (!projectPath.equalsIgnoreCase(tfsBaseline.projectPath))
         {
             // There's no PollingResult.INCOMPARABLE, so we use the next closest thing
-            return PollingResult.BUILD_NOW;
+            return BUILD_NOW;
         }
         Run<?, ?> build = project.getLastBuild();
         final Server server = createServer(localLauncher, listener, build);
