@@ -4,7 +4,11 @@ import com.cloudbees.plugins.credentials.common.StandardUsernamePasswordCredenti
 import com.microsoft.tfs.core.clients.versioncontrol.specs.version.ChangesetVersionSpec;
 import com.microsoft.tfs.core.clients.versioncontrol.specs.version.DateVersionSpec;
 import com.microsoft.tfs.core.clients.versioncontrol.specs.version.VersionSpec;
-import hudson.*;
+import hudson.EnvVars;
+import hudson.Extension;
+import hudson.FilePath;
+import hudson.Launcher;
+import hudson.Util;
 import hudson.model.AbstractBuild;
 import hudson.model.AbstractProject;
 import hudson.model.Job;
@@ -733,18 +737,18 @@ public class TeamFoundationServerScm extends SCM {
 
         final EnvVars pollEnv = project instanceof AbstractProject ? TfsUtils.getPollEnvironment((AbstractProject) project, workspace, launcher, listener, false) : lastBuild.getEnvironment(listener);
 
-        String projectPath = pollEnv.expand(this.projectPath);
+        String expandedProjectPath = pollEnv.expand(this.projectPath);
 
-        if (!projectPath.equalsIgnoreCase(tfsBaseline.projectPath)) {
+        if (!expandedProjectPath.equalsIgnoreCase(tfsBaseline.projectPath)) {
             // There's no PollingResult.INCOMPARABLE, so we use the next closest thing
             return BUILD_NOW;
         }
-        final Project tfsProject = server.getProject(projectPath);
+        final Project tfsProject = server.getProject(expandedProjectPath);
         try {
             final ChangeSet latest = tfsProject.getLatestUncloakedChangeset(tfsBaseline.changesetVersion, cloakedPaths);
             final TFSRevisionState tfsRemote =
                     (latest != null)
-                    ? new TFSRevisionState(latest.getVersion(), projectPath)
+                    ? new TFSRevisionState(latest.getVersion(), expandedProjectPath)
                     : tfsBaseline;
 
             // TODO: we could return INSIGNIFICANT if all the changesets
